@@ -1,4 +1,7 @@
 PROGRAM MAIN
+  
+  ! Program to test the use of the block_gen module
+
   USE block_gen
 
   IMPLICIT NONE
