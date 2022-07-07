@@ -2,6 +2,7 @@ PROGRAM MAIN
   
   ! Program to test the use of the block_gen module
 
+  USE, INTRINSIC :: ISO_FORTRAN_ENV
   USE block_gen
 
   IMPLICIT NONE
@@ -9,11 +10,11 @@ PROGRAM MAIN
   INTEGER :: iMin = 1,  &
              iMax = 101
 
-  REAL, PARAMETER :: x_min   =   0.0, &
-                     x_max   = 100.0, &
-                     delta_x =   1.0
+  REAL(KIND=rDef), PARAMETER :: x_min   =   0.0, &
+                                x_max   = 100.0, &
+                                delta_x =   1.0
 
-  REAL, DIMENSION(6) :: block_min, block_max
+  REAL(KIND=rDef), DIMENSION(6) :: block_min, block_max
 
   CALL blocks(x_min,x_max,delta_x,block_min,block_max)
 
