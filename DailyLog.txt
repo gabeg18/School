@@ -1,0 +1,4 @@
+07 Jul 22
+- Completed GridPro Tutorial 1, generating grid for a two-dimensional square
+- Setup and configured GitHub to provide Version Control 
+- Created multi-block generation module and accompanying subroutine, and main code to test and debug module and subroutine
