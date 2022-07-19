@@ -127,7 +127,7 @@ MODULE Input_Processing
     
     ! 3.) Set value of block array equal to these values
     
-    WRITE (0,'("Sorted Data:")')
+!   WRITE (0,'("Sorted Data:")')
     DO i = 1,num_blocks
       blocks(i) = temp(FINDLOC(temp % block_number,i,1)) 
 
@@ -140,10 +140,10 @@ MODULE Input_Processing
     DO i=2,num_blocks-1
       global_iMax = global_iMax + blocks(i) % iMax
     END DO
-    WRITE (0,'(/"Global iMax: ",I3)') global_iMax
+    WRITE (0,'("Global iMax: ",I3,/)') global_iMax
 
     ! Allocate and Initialize Flow Variables
-    WRITE(0,'("Block ",3X,"i",6X,"u",8X,"uNew",6X,"uExact",8X,"x")')
+!   WRITE(0,'("Block ",3X,"i",6X,"u",8X,"uNew",6X,"uExact",8X,"x")')
 
     DO i = 1,num_blocks
       ALLOCATE(blocks(i) % u(blocks(i)%iMax),      &
@@ -153,17 +153,17 @@ MODULE Input_Processing
 
 
       DO j = 1,blocks(i)%iMax
-
         blocks(i) % u(j)      = 0.0_rDef
         blocks(i) % uNew(j)   = 0.0_rDef
         blocks(i) % uExact(j) = 0.0_rDef
         blocks(i) % x(j)      = 0.0_rDef 
 
-      WRITE(0,'(2I5,3(F9.3,2X),F9.3)') i,j,                            &  
-                                       blocks(i) % u(j),      &     
-                                       blocks(i) % uNew(j),   &
-                                       blocks(i) % uExact(j), &
-                                       blocks(i) % x(j)
+      ! SANITY CHECK: Write to Screen
+!     WRITE(0,'(2I5,3(F9.3,2X),F9.3)') i,j,                            &  
+!                                      blocks(i) % u(j),      &     
+!                                      blocks(i) % uNew(j),   &
+!                                      blocks(i) % uExact(j), &
+!                                      blocks(i) % x(j)
 
       END DO
 
@@ -173,13 +173,87 @@ MODULE Input_Processing
     END SUBROUTINE Read_Data
 END MODULE Input_Processing
 
+
+MODULE SetParams
+  USE, INTRINSIC :: ISO_FORTRAN_ENV
+  USE block_type
+  IMPLICIT NONE
+  PRIVATE
+  PUBLIC :: GetParams
+  
+  INTEGER, PARAMETER :: rDef = REAL64
+
+INTERFACE GetParams
+  MODULE PROCEDURE Calculate_Parameters
+END INTERFACE
+
+  CONTAINS
+
+    ! This subroutine calculates the dX, mu, and dT for each block when provided
+    ! the block values. These parameters are then passed back for use in the 
+    ! actual solver
+
+    SUBROUTINE Calculate_Parameters(unsolved_blocks,  &
+                                    sigma,            &
+                                    dX,               &
+                                    mu,               &
+                                    dT)
+
+      ! Dummy Argument Declarations
+      TYPE(grid_block), DIMENSION(:), INTENT(IN) :: unsolved_blocks
+
+
+      REAL(KIND=rDef), DIMENSION(:), ALLOCATABLE,  INTENT(OUT) :: sigma,  &
+                                                                  dX,     &
+                                                                  mu,     & 
+                                                                  dT
+
+      ! Local Variables
+      INTEGER :: num_blocks,  &
+                 i
+
+      !num_blocks = SIZE(unsolved_blocks,1)
+
+      num_blocks = 1
+
+      ! Allocate Memory
+      ALLOCATE(sigma(num_blocks), &
+                  dx(num_blocks), &
+                  mu(num_blocks), &
+                  dT(num_blocks))
+
+      DO i = 1,num_blocks
+
+        dX(i) =     (unsolved_blocks(i) % xMax - unsolved_blocks(1) % xMin)/ &
+                REAL(unsolved_blocks(i) % iMax - 1,rDef)
+
+        mu(i) = 1.0_rDef/10.0_rDef
+
+        dT(i) = 0.5_rDef*(dX(i)*dX(i))/mu(i)
+
+        sigma(i) = mu(i)*dT(i)/(dX(i)*dX(i))
+
+        WRITE(6,'("Calculated Parameters: ",/,  &
+          "Block: ",I3,/,                       &
+          "sigma: ",F5.3,2X,"dX: ",F5.3,2X,"mu: ",F5.3,2X,"dT: ",F5.3)') unsolved_blocks(i) % block_number,  &
+                                                                         sigma(i),       &
+                                                                         dX(i),          &
+                                                                         mu(i),          &
+                                                                         dT(i)
+      END DO
+
+    END SUBROUTINE Calculate_Parameters
+
+END MODULE SetParams
+
+
+
 MODULE CD2E
   USE, INTRINSIC :: ISO_FORTRAN_ENV
   USE block_type
   IMPLICIT NONE
   PRIVATE
-  PUBLIC :: GetCD2E1Update, &
-            GetCD2RKUpdate
+  PUBLIC :: GetCD2E1Update
 
   INTEGER, PARAMETER :: rDef = REAL64
 
@@ -187,23 +261,89 @@ MODULE CD2E
    MODULE PROCEDURE CalculateCD2E1Update
  END INTERFACE
 
- INTERFACE GetCD2RKUpdate
-   MODULE PROCEDURE CalculateCD2E1Update
- END INTERFACE
-
   CONTAINS 
-    SUBROUTINE CalculateCD2E1Update(num_blocks,blocks,solved_blocks)
+    SUBROUTINE CalculateCD2E1Update(sigma,dX,mu,dT,   &
+                                    unsolved_blocks,  &
+                                    solved_blocks)
 
     ! Dummy Variables
-    TYPE(grid_block), DIMENSION(:), INTENT(IN) :: blocks
-    INTEGER, INTENT(IN) :: num_blocks
+    REAL(KIND=rDef), DIMENSION(:), INTENT(IN) :: sigma, dX, mu, dT
+    TYPE(grid_block), DIMENSION(:), INTENT(IN) :: unsolved_blocks
 
-    TYPE(grid_block), DIMENSION(:), INTENT(OUT) :: solved_blocks
+    TYPE(grid_block), DIMENSION(:), ALLOCATABLE, INTENT(OUT) :: solved_blocks
+
 
     ! Local Variables
-    INTEGER :: i,j
+    REAL(KIND=rDef), DIMENSION(:), ALLOCATABLE :: x,  &
+                                                  uExact, &
+                                                  u,  &
+                                                  uNew
 
-    WRITE(6,*) num_blocks
+
+    INTEGER :: i,j,   &
+               iMin,  &
+               iMax
+
+    REAL(KIND=rDef) :: xMin,  &
+                       xMax
+    
+    ! Beginning with a single block...
+
+    ! Allocate Memory
+    ALLOCATE(solved_blocks(1))
+
+    ! Set Local Values
+    iMin = unsolved_blocks(1)%iMin
+    iMax = unsolved_blocks(1)%iMax
+
+    ALLOCATE(x(iMax),       &
+             uExact(iMax),  &
+             u(iMax),       &
+             uNew(iMax))
+
+    xMin = unsolved_blocks(1)%xMin
+    xMax = unsolved_blocks(1)%xMax
+
+
+    solved_blocks(1)%uMin     = 1.0_rDef
+    solved_blocks(1)%uMax     = 3.0_rDef
+    solved_blocks(1)%uInitial = 2.0_rDef
+
+
+    ! Flow Solution (Starting with 1 block)
+
+!    OPEN(55, FILE='test.dat', STATUS='NEW')
+!
+
+    ! Initialize and Map Exact Solution
+!   DO i = iMin,iMax
+!     u(i) = solved_blocks(1) % uInitial
+!     x(i) = xMin + REAL(i-1,rDef)*dX(1)
+!     uExact(i) = solved_blocks(1) % uMin + (solved_blocks(1) % uMax  &
+!                                         -  solved_blocks(1) % uMin) &
+!                                         * (x(i)-xMin)/(xMax - xMin)
+!   END DO
+!
+!   ! Apply B.C.
+!   uNew(1) = solved_blocks(1) % uMin
+!   uNew(iMax) = solved_blocks(1) % uMax
+!
+!   ! Solving for Interior Domain
+!   DO i = 2,iMax-1
+!    uNew(i) = u(i) + sigma(1)*(u(i+1)   &
+!                   -  2.0_rDef*u(i)     &
+!                   +           u(i-1))
+!   END DO
+!
+!
+!
+!
+!   ! Write Results
+!   DO i = iMin,iMax
+!      WRITE(55,*) x(i),uExact(i),uNew(i)
+!   END DO
+!
+!   CLOSE(55)
 
     END SUBROUTINE CalculateCD2E1Update
 
@@ -213,6 +353,7 @@ END MODULE CD2E
 PROGRAM MAIN
   USE block_type
   USE Input_Processing
+  USE SetParams
   USE CD2E
   USE ISO_FORTRAN_ENV
   IMPLICIT NONE
@@ -245,31 +386,42 @@ PROGRAM MAIN
                nG,nStep,        &
                iMax
 
-    REAL(KIND=rDef) :: dX, dT, uMin, uMax, uInitial, l2Err, dU
-
-    REAL(KIND=rDef), DIMENSION(:), ALLOCATABLE :: u,      &
-                                                  uNew,   &
-                                                  uExact, &
-                                                  x
-
+   REAL(KIND=rDef), DIMENSION(:), ALLOCATABLE :: sigma      
+!                                                 dX,        &
+!                                                 mu,        &
+!                                                 dT,        &
+!                                                 uMin,      & 
+!                                                 uMax,      &
+!                                                 uInitial,  & 
+!                                                 l2Err,     &
+!                                                 dU
+!
+!   REAL(KIND=rDef), DIMENSION(:), ALLOCATABLE :: u,      &
+!                                                 uNew,   &
+!                                                 uExact, &
+!                                                 x
+!
     TYPE(grid_block), DIMENSION(:), ALLOCATABLE :: unsolved_blocks, &
-                                                     solved_blocks
+                                                     solved_blocks, &
+                                                     block_parameters
 
-
-    CHARACTER(LEN=30) :: OutputFileName, &
-                         OutputDataFileName
-
-    CHARACTER(LEN=5), DIMENSION(3) :: dType 
-
-    ! Stencil "Names"
-    dType(1) = 'CD2E1'
-    dType(2) = 'CD2I1'
-    dType(3) = 'CD2RK'
-
-    ! Boundary and Initial Condtions
-    uMin     = 1.0_rDef
-    uMax     = 3.0_rDef
-    uInitial = 2.0_rDef
+!
+!   CHARACTER(LEN=30) :: OutputFileName, &
+!                        OutputDataFileName
+!
+!   CHARACTER(LEN=5), DIMENSION(3) :: dType 
+!
+!   integer :: test
+!
+!   ! Stencil "Names"
+!   dType(1) = 'CD2E1'
+!   dType(2) = 'CD2I1'
+!   dType(3) = 'CD2RK'
+!
+!   ! Boundary and Initial Condtions
+!   uMin     = 1.0_rDef
+!   uMax     = 3.0_rDef
+!   uInitial = 2.0_rDef
 
 
     !! MAIN Code Starts Here
@@ -291,17 +443,28 @@ PROGRAM MAIN
     CALL Process_Data(InputFileName,unsolved_blocks,num_blocks,iMax)
     CLOSE (15)
 
-    ! Allocate Block Data
-
-
-    write(6,*) unsolved_blocks(1)%u(1)
-
-
-
-    ! Calculate Solution(s)
-    !CALL GetCD2E1Update(num_blocks,unsolved_blocks,solved_blocks)
-
-
+    ! Set Parameters
+!   CALL GetParams(unsolved_blocks,  &
+!                  sigma,            &
+!                  dX,               &
+!                  mu,               &
+!                  dT)
+!
+!
+!
+!   ! Calculate Solution(s)
+!   CALL GetCD2E1Update(sigma,dX,mu,dT,   &
+!                       unsolved_blocks,  &
+!                       solved_blocks)
+!
+!   ! L2 Calculation
+!   l2Err = 0.0_rDef
+!   DO i = 1,iMax
+!     u(i)  = uNew(i)
+!     dU    = u(i) - uNew(i)
+!     l2Err = l2Err + (dU*dU)
+!   END DO
+!   l2Err = SQRT(l2Err/REAL(iMax,rDef))
   
 
 END PROGRAM MAIN
