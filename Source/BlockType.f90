@@ -16,7 +16,9 @@ MODULE block_type
                iMin,          &
                iMax
 
-    REAL(KIND=rDef) :: dX,       &
+    REAL(KIND=rDef) :: sigma,    &
+                       mu,       &
+                       dX,       &
                        dT,       & 
                        uMin,     &
                        uMax,     &
