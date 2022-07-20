@@ -142,33 +142,61 @@ MODULE CD2E
  END INTERFACE
 
   CONTAINS 
-    SUBROUTINE CalculateCD2E1Update(solved_blocks)
+    SUBROUTINE CalculateCD2E1Update(unsolved_blocks,solved_blocks)
 
     ! Dummy Variables
-    TYPE(grid_block), DIMENSION(:), INTENT(INOUT) :: solved_blocks
+    TYPE(grid_block), DIMENSION(:), INTENT(IN) :: unsolved_blocks
+    TYPE(grid_block), DIMENSION(:), INTENT(OUT) ::   solved_blocks
 
     ! Local Variables
     INTEGER :: i,j,   &
                iMin,  &
-               iMax
+               iMax,  &
+               num_blocks
 
     REAL(KIND=rDef) :: xMin,  &
                        xMax
     
+    num_blocks = 1
+
     ! Beginning with a single block...
 
-    ! Set Local Values
-    iMin = solved_blocks(1) % iMin
-    iMax = solved_blocks(1) % iMax
+    DO i = 1,num_blocks
 
-    xMin = solved_blocks(1) % xMin
-    xMax = solved_blocks(1) % xMax
+      ! Allocate Memory
+      ALLOCATE(solved_blocks(i) % u(unsolved_blocks(i)%iMax),        &
+               solved_blocks(i) % uNew(unsolved_blocks(i)%iMax),     &
+               solved_blocks(i) % uExact(unsolved_blocks(i)%iMax),   &
+               solved_blocks(i) % x(unsolved_blocks(i)%iMax))
+             
+      ! "Transfer" Data to "Solved" Blocks
+      solved_blocks(i) % block_number = unsolved_blocks(i) % block_number
+      solved_blocks(i) % xMin         = unsolved_blocks(i) % xMin
+      solved_blocks(i) % xMax         = unsolved_blocks(i) % xMax
+      solved_blocks(i) % iMin         = unsolved_blocks(i) % iMin
+      solved_blocks(i) % iMax         = unsolved_blocks(i) % iMax
+
+      ! Initialize Flow Variables
+      DO j = 1,solved_blocks(i)%iMax
+        solved_blocks(i) % u(j)      = 0.0_rDef
+        solved_blocks(i) % uNew(j)   = 0.0_rDef
+        solved_blocks(i) % uExact(j) = 0.0_rDef
+        solved_blocks(i) % x(j)      = 0.0_rDef 
+      END DO
+      
+      ! Set Local Values
+      iMin = solved_blocks(i) % iMin
+      iMax = solved_blocks(i) % iMax
+
+      xMin = solved_blocks(i) % xMin
+      xMax = solved_blocks(i) % xMax
+
+      ! Initialize Block Variables
+      solved_blocks(i) % u(1)                     = 1.0_rDef
+      solved_blocks(i) % u(solved_blocks(i)%iMax) = 3.0_rDef
+    END DO
 
 
-    ! Initialize Block Variables
-    solved_blocks(1) % uMin     = 1.0_rDef
-    solved_blocks(1) % uMax     = 3.0_rDef
-    solved_blocks(1) % uInitial = 2.0_rDef
 
 
     ! Flow Solution (Starting with 1 block)
@@ -272,11 +300,11 @@ PROGRAM MAIN
     !--------------------------------------------------------------------
       
     DO
-     PRINT *,"Please give name of data file"
-     READ *,InputFileName
+     !PRINT *,"Please give name of data file"
+     !READ *,InputFileName
 
      ! Open data file on unit number "in" and read data
-     OPEN (15, FILE=InputFileName, STATUS="OLD", IOSTAT=ios)
+     OPEN (15, FILE='input.txt', STATUS="OLD", IOSTAT=ios)
 
      !! Reading Data
      !------------------------------------------------------------------
@@ -299,38 +327,16 @@ PROGRAM MAIN
                                  unsolved_blocks(i) % iMin,         &
                                  unsolved_blocks(i) % iMax
 
+      ALLOCATE(solved_blocks(i) % u(unsolved_blocks(i)%iMax),        &
+               solved_blocks(i) % uNew(unsolved_blocks(i)%iMax),     &
+               solved_blocks(i) % uExact(unsolved_blocks(i)%iMax),   &
+               solved_blocks(i) % x(unsolved_blocks(i)%iMax))
+
        WRITE (0,'(4(I3,2X),I3)') unsolved_blocks(i) % block_number, &
                                  unsolved_blocks(i) % xMin,         &
                                  unsolved_blocks(i) % xMax,         &
                                  unsolved_blocks(i) % iMin,         &
                                  unsolved_blocks(i) % iMax
-     END DO
-
-     ! Allocate and Initialize Flow Variables
-     WRITE(0,'("Block ",3X,"i",6X,"u",8X,"uNew",6X,"uExact",8X,"x")')
-
-     DO i = 1,num_blocks
-       ALLOCATE(unsolved_blocks(i) % u(unsolved_blocks(i)%iMax),        &
-                unsolved_blocks(i) % uNew(unsolved_blocks(i)%iMax),     &
-                unsolved_blocks(i) % uExact(unsolved_blocks(i)%iMax),   &
-                unsolved_blocks(i) % x(unsolved_blocks(i)%iMax))
-
-
-       DO j = 1,unsolved_blocks(i)%iMax
-         unsolved_blocks(i) % u(j)      = 0.0_rDef
-         unsolved_blocks(i) % uNew(j)   = 0.0_rDef
-         unsolved_blocks(i) % uExact(j) = 0.0_rDef
-         unsolved_blocks(i) % x(j)      = 0.0_rDef 
-
-       ! SANITY CHECK: Write to Screen
-       WRITE(0,'(2I5,3(F9.3,2X),F9.3)') i,j,                            &  
-                                        unsolved_blocks(i) % u(j),      &     
-                                        unsolved_blocks(i) % uNew(j),   &
-                                        unsolved_blocks(i) % uExact(j), &
-                                        unsolved_blocks(i) % x(j)
-
-       END DO
-
      END DO
 
      ! Repeat request if file not opened satisfactorily
@@ -340,13 +346,13 @@ PROGRAM MAIN
 
     
     CALL Sort_Data(unsolved_blocks,num_blocks)
-    CLOSE (15)
+    !CLOSE (15)
 
     ! Set Parameters
     CALL GetParams(unsolved_blocks,num_blocks)
 
-   ! Calculate Solution(s)
-   CALL GetCD2E1Update(solved_blocks)
+    ! Calculate Solution(s)
+    CALL GetCD2E1Update(unsolved_blocks,solved_blocks)
 !
 !  ! L2 Calculation
 !  l2Err = 0.0_rDef
