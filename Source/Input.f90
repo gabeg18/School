@@ -115,7 +115,7 @@ END INTERFACE
           "sigma: ",F5.3,2X,                     &
           "dX: ",F5.3,2X,                        &
           "mu: ",F5.3,2X,                        &
-          "dT: ",F5.3/)') unsolved_blocks(i) % block_number,  &
+          "dT: ",F5.3/)')  unsolved_blocks(i) % block_number,  &
                            unsolved_blocks(i) % sigma,         &
                            unsolved_blocks(i) % dX,            &
                            unsolved_blocks(i) % mu,            &
@@ -175,6 +175,11 @@ MODULE CD2E
       solved_blocks(i) % xMax         = unsolved_blocks(i) % xMax
       solved_blocks(i) % iMin         = unsolved_blocks(i) % iMin
       solved_blocks(i) % iMax         = unsolved_blocks(i) % iMax
+      solved_blocks(i) % block_number = unsolved_blocks(i) % block_number
+      solved_blocks(i) % sigma        = unsolved_blocks(i) % sigma
+      solved_blocks(i) % dX           = unsolved_blocks(i) % dX
+      solved_blocks(i) % mu           = unsolved_blocks(i) % mu
+      solved_blocks(i) % dT           = unsolved_blocks(i) % dT
 
       ! Initialize Flow Variables
       DO j = 1,solved_blocks(i)%iMax
@@ -183,7 +188,20 @@ MODULE CD2E
         solved_blocks(i) % uExact(j) = 0.0_rDef
         solved_blocks(i) % x(j)      = 0.0_rDef 
       END DO
-      
+
+      solved_blocks(i) % uMin     = 1.0_rDef
+      solved_blocks(i) % uMax     = 3.0_rDef
+      solved_blocks(i) % uInitial = 2.0_rDef
+
+      ! Create Space Domain and Map Exact Solution
+      DO j = 1,solved_blocks(i) % iMax
+
+        solved_blocks(i) % x(j) = solved_blocks(i) %  xMin + REAL(j-1,rDef) * solved_blocks(i) % dX
+        solved_blocks(i) % uExact(j) = solved_blocks(i) % uMin + (solved_blocks(i) % uMax   &
+                                                               -  solved_blocks(i) % uMin)  &
+                                     * (solved_blocks(i) % x(j) - solved_blocks(i) % xMin)/ &
+                                       (solved_blocks(i) % xMax - solved_blocks(i) % xMin)
+      END DO
       ! Set Local Values
       iMin = solved_blocks(i) % iMin
       iMax = solved_blocks(i) % iMax
@@ -191,28 +209,10 @@ MODULE CD2E
       xMin = solved_blocks(i) % xMin
       xMax = solved_blocks(i) % xMax
 
-      ! Initialize Block Variables
-      solved_blocks(i) % u(1)                     = 1.0_rDef
-      solved_blocks(i) % u(solved_blocks(i)%iMax) = 3.0_rDef
     END DO
-
-
 
 
     ! Flow Solution (Starting with 1 block)
-
-    OPEN(55, FILE='test.dat', STATUS='NEW')
-
-
-    ! Initialize and Map Exact Solution
-    DO i = iMin,iMax
-      solved_blocks(1) % u(i) = solved_blocks(1) % uInitial
-      solved_blocks(1) % x(i) = xMin + REAL(i-1,rDef) * solved_blocks(1) % dX
-      solved_blocks(1) % uExact(i) = solved_blocks(1) % uMin + (solved_blocks(1) % uMax   &
-                                                             -  solved_blocks(1) % uMin)  &
-                                   * (solved_blocks(1) % x(i) - solved_blocks(1) % xMin)/ &
-                                     (solved_blocks(1) % xMax - solved_blocks(1) % xMin)
-    END DO
 
     ! Apply B.C.
     solved_blocks(1) % uNew(1) = solved_blocks(1) % uMin
@@ -225,18 +225,6 @@ MODULE CD2E
                        -  2.0_rDef*solved_blocks(1) % u(i)                                 &
                        +           solved_blocks(1) % u(i-1))
     END DO
-
-
-
-
-    ! Write Results
-    DO i = iMin,iMax
-      WRITE(55,*) solved_blocks(1) % x(i),      &
-                  solved_blocks(1) % uExact(i), &
-                  solved_blocks(1) % uNew(i)
-    END DO
-
-     CLOSE(55)
 
     END SUBROUTINE CalculateCD2E1Update
 
@@ -255,12 +243,12 @@ PROGRAM MAIN
     INTEGER, PARAMETER :: rDef           = REAL64, &  ! Precision
                           num_grids      = 2,      &  ! Grids
                           num_schemes    = 3,      &  ! Stencils
-                          max_iterations = 1000000    ! Fail-Safe
+                          maxItn = 1000000    ! Fail-Safe
 
     REAL(KIND=rDef), PARAMETER :: x_min   = 0.0_rDef,     &
                                   x_max   = 100.0_rDef,   &
-                                  l2_tol  = 1.0e-10_rDef, &
-                                  l2_max  = 1.0_rDef,     & ! Stops the code
+                                  l2Tol  = 1.0e-10_rDef, &
+                                  l2Max  = 1.0_rDef,     & ! Stops the code
                                   nu      = 0.1_rDef
 
     REAL(KIND=rDef), DIMENSION(3), PARAMETER :: sigmaMax = (/ &
@@ -276,8 +264,7 @@ PROGRAM MAIN
                i,j,             &
                outFileUnit,     &
                outDataFileUnit, &
-               nG,nStep,        &
-               iMax
+               nG,nStep
 
     TYPE(grid_block), DIMENSION(:), ALLOCATABLE :: unsolved_blocks, &
                                                      solved_blocks
@@ -351,18 +338,50 @@ PROGRAM MAIN
     ! Set Parameters
     CALL GetParams(unsolved_blocks,num_blocks)
 
+    ! Initialize Data
+    DO i = 1, solved_blocks(1) % iMax
+      solved_blocks(1) % u(i) = solved_blocks(1) % uInitial
+    END DO
+
+    nStep = 0
+    99 CONTINUE
+
     ! Calculate Solution(s)
+    nStep = nStep + 1
+
     CALL GetCD2E1Update(unsolved_blocks,solved_blocks)
+
+    ! Calculate l2Err
+    solved_blocks(1) % l2Err = 0.0_rDef
+    DO i = 1,solved_blocks(1) % iMax
+      solved_blocks(1) % u(i)   = solved_blocks(1) % uNew(i)
+      solved_blocks(1) % dU     = solved_blocks(1) % u(i) - solved_blocks(1) % uExact(i)
+      solved_blocks(1) % l2Err  = solved_blocks(1) % l2Err + &
+                                 (solved_blocks(1) % dU * solved_blocks(1) % dU)
+    END DO
+
+    solved_blocks(1) % l2Err = SQRT(solved_blocks(1) % l2Err/REAL(solved_blocks(1)%iMax))
 !
-!  ! L2 Calculation
-!  l2Err = 0.0_rDef
-!  DO i = 1,iMax
-!    u(i)  = uNew(i)
-!    dU    = u(i) - uNew(i)
-!    l2Err = l2Err + (dU*dU)
-!  END DO
-!  l2Err = SQRT(l2Err/REAL(iMax,rDef))
-  
+!   WRITE(0,*) nStep,solved_blocks(1) % l2Err
+!
+!   IF ((solved_blocks(1) % l2Err < l2Max) .AND.  &
+!      (solved_blocks(1) % l2Err > l2Tol) .AND.  &
+!      (nStep < maxItn)) THEN  ! Keep going
+!    GO TO 99
+!  ELSE
+!    CONTINUE  ! Done
+!  END IF
+
+    OPEN(55, FILE='test.dat', STATUS='NEW')
+
+    ! Write Results
+    DO i = solved_blocks(1) % iMin,solved_blocks(1) % iMax
+      WRITE(55,*) solved_blocks(1) % x(i),      &
+                  solved_blocks(1) % uExact(i), &
+                  solved_blocks(1) % uNew(i)
+    END DO
+
+     CLOSE(55)
 
 END PROGRAM MAIN
 
