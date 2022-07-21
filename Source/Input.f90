@@ -85,10 +85,10 @@ END INTERFACE
     ! the block values. These parameters are then passed back for use in the 
     ! actual solver
 
-    SUBROUTINE Calculate_Parameters(unsolved_blocks,num_blocks)
+    SUBROUTINE Calculate_Parameters(grid_blocks,num_blocks)
 
       ! Dummy Argument Declarations
-      TYPE(grid_block), DIMENSION(:), INTENT(INOUT) :: unsolved_blocks
+      TYPE(grid_block), DIMENSION(:), INTENT(INOUT) :: grid_blocks
       INTEGER, INTENT(IN) :: num_blocks
 
       ! Local Variables
@@ -100,26 +100,26 @@ END INTERFACE
 
       DO i = 1,num_blocks
 
-        unsolved_blocks(i) % dX =     (unsolved_blocks(i) % xMax - unsolved_blocks(i) % xMin)/ &
-                                  REAL(unsolved_blocks(i) % iMax - 1,rDef)
+        grid_blocks(i) % dX =     (grid_blocks(i) % xMax - grid_blocks(i) % xMin)/ &
+                                  REAL(grid_blocks(i) % iMax - 1,rDef)
 
-        unsolved_blocks(i) % mu = 1.0_rDef/10.0_rDef
+        grid_blocks(i) % mu = 1.0_rDef/10.0_rDef
 
-        unsolved_blocks(i) % dT = 0.5_rDef*(unsolved_blocks(i) % dX * unsolved_blocks(i) % dX)/ &
-                                            unsolved_blocks(i) % mu
+        grid_blocks(i) % dT = 0.5_rDef*(grid_blocks(i) % dX * grid_blocks(i) % dX)/ &
+                                            grid_blocks(i) % mu
 
-        unsolved_blocks(i) % sigma = unsolved_blocks(i) % mu * unsolved_blocks(i) % dT/ &
-                                    (unsolved_blocks(i) % dX * unsolved_blocks(i) % dX)
+        grid_blocks(i) % sigma = grid_blocks(i) % mu * grid_blocks(i) % dT/ &
+                                    (grid_blocks(i) % dX * grid_blocks(i) % dX)
 
         WRITE(0,'("Block: ",I3/,                 &
           "sigma: ",F5.3,2X,                     &
           "dX: ",F5.3,2X,                        &
           "mu: ",F5.3,2X,                        &
-          "dT: ",F5.3/)')  unsolved_blocks(i) % block_number,  &
-                           unsolved_blocks(i) % sigma,         &
-                           unsolved_blocks(i) % dX,            &
-                           unsolved_blocks(i) % mu,            &
-                           unsolved_blocks(i) % dT
+          "dT: ",F5.3/)')  grid_blocks(i) % block_number,  &
+                           grid_blocks(i) % sigma,         &
+                           grid_blocks(i) % dX,            &
+                           grid_blocks(i) % mu,            &
+                           grid_blocks(i) % dT
       END DO
 
     END SUBROUTINE Calculate_Parameters
@@ -142,16 +142,13 @@ MODULE CD2E
  END INTERFACE
 
   CONTAINS 
-    SUBROUTINE CalculateCD2E1Update(unsolved_blocks,solved_blocks)
+    SUBROUTINE CalculateCD2E1Update(grid_blocks)
 
     ! Dummy Variables
-    TYPE(grid_block), DIMENSION(:), INTENT(IN) :: unsolved_blocks
-    TYPE(grid_block), DIMENSION(:), INTENT(OUT) ::   solved_blocks
+    TYPE(grid_block), DIMENSION(:), INTENT(INOUT) :: grid_blocks
 
     ! Local Variables
     INTEGER :: i,j,   &
-               iMin,  &
-               iMax,  &
                num_blocks
 
     REAL(KIND=rDef) :: xMin,  &
@@ -161,69 +158,30 @@ MODULE CD2E
 
     ! Beginning with a single block...
 
+    ! Exact Solution
+
     DO i = 1,num_blocks
-
-      ! Allocate Memory
-      ALLOCATE(solved_blocks(i) % u(unsolved_blocks(i)%iMax),        &
-               solved_blocks(i) % uNew(unsolved_blocks(i)%iMax),     &
-               solved_blocks(i) % uExact(unsolved_blocks(i)%iMax),   &
-               solved_blocks(i) % x(unsolved_blocks(i)%iMax))
-             
-      ! "Transfer" Data to "Solved" Blocks
-      solved_blocks(i) % block_number = unsolved_blocks(i) % block_number
-      solved_blocks(i) % xMin         = unsolved_blocks(i) % xMin
-      solved_blocks(i) % xMax         = unsolved_blocks(i) % xMax
-      solved_blocks(i) % iMin         = unsolved_blocks(i) % iMin
-      solved_blocks(i) % iMax         = unsolved_blocks(i) % iMax
-      solved_blocks(i) % block_number = unsolved_blocks(i) % block_number
-      solved_blocks(i) % sigma        = unsolved_blocks(i) % sigma
-      solved_blocks(i) % dX           = unsolved_blocks(i) % dX
-      solved_blocks(i) % mu           = unsolved_blocks(i) % mu
-      solved_blocks(i) % dT           = unsolved_blocks(i) % dT
-
-      ! Initialize Flow Variables
-      DO j = 1,solved_blocks(i)%iMax
-        solved_blocks(i) % u(j)      = 0.0_rDef
-        solved_blocks(i) % uNew(j)   = 0.0_rDef
-        solved_blocks(i) % uExact(j) = 0.0_rDef
-        solved_blocks(i) % x(j)      = 0.0_rDef 
-      END DO
-
-      solved_blocks(i) % uMin     = 1.0_rDef
-      solved_blocks(i) % uMax     = 3.0_rDef
-      solved_blocks(i) % uInitial = 2.0_rDef
-
-      ! Create Space Domain and Map Exact Solution
-      DO j = 1,solved_blocks(i) % iMax
-
-        solved_blocks(i) % x(j) = solved_blocks(i) %  xMin + REAL(j-1,rDef) * solved_blocks(i) % dX
-        solved_blocks(i) % uExact(j) = solved_blocks(i) % uMin + (solved_blocks(i) % uMax   &
-                                                               -  solved_blocks(i) % uMin)  &
-                                     * (solved_blocks(i) % x(j) - solved_blocks(i) % xMin)/ &
-                                       (solved_blocks(i) % xMax - solved_blocks(i) % xMin)
-      END DO
-      ! Set Local Values
-      iMin = solved_blocks(i) % iMin
-      iMax = solved_blocks(i) % iMax
-
-      xMin = solved_blocks(i) % xMin
-      xMax = solved_blocks(i) % xMax
-
-    END DO
+!
+!     ! Allocate Memory
+!     ALLOCATE(solved_blocks(i) % u(solved_blocks(i)%iMax),        &
+!              solved_blocks(i) % uNew(solved_blocks(i)%iMax),     &
+!              solved_blocks(i) % uExact(solved_blocks(i)%iMax),   &
+!              solved_blocks(i) % x(solved_blocks(i)%iMax))
 
 
     ! Flow Solution (Starting with 1 block)
 
-    ! Apply B.C.
-    solved_blocks(1) % uNew(1) = solved_blocks(1) % uMin
-    solved_blocks(1) % uNew(iMax) = solved_blocks(1) % uMax
+      ! Apply B.C.
+      grid_blocks(i) % uNew(grid_blocks(i) % iMin) = grid_blocks(i) % uMin
+      grid_blocks(i) % uNew(grid_blocks(i) % iMax) = grid_blocks(i) % uMax
 
-    ! Solving for Interior Domain
-    DO i = 2,iMax-1
-      solved_blocks(1) % uNew(i) = solved_blocks(1) % u(i)   + solved_blocks(1) % sigma *  &
-                                  (solved_blocks(1) % u(i+1)                               &
-                       -  2.0_rDef*solved_blocks(1) % u(i)                                 &
-                       +           solved_blocks(1) % u(i-1))
+      ! Solving for Interior Domain
+      DO j = 2,(grid_blocks(i) % iMax) - 1
+        grid_blocks(i) % uNew(j) = grid_blocks(i) % u(j) + grid_blocks(i) % sigma *  &
+                                  (grid_blocks(i) % u(j+1)                               &
+                       -  2.0_rDef*grid_blocks(i) % u(j)                                 &
+                       +           grid_blocks(i) % u(j-1))
+      END DO
     END DO
 
     END SUBROUTINE CalculateCD2E1Update
@@ -266,8 +224,7 @@ PROGRAM MAIN
                outDataFileUnit, &
                nG,nStep
 
-    TYPE(grid_block), DIMENSION(:), ALLOCATABLE :: unsolved_blocks, &
-                                                     solved_blocks
+    TYPE(grid_block), DIMENSION(:), ALLOCATABLE :: grid_blocks
 
 
     CHARACTER(LEN=30) :: OutputFileName, &
@@ -300,30 +257,44 @@ PROGRAM MAIN
      WRITE(0,'(/"Number of blocks (specified in file):",I3/)') num_blocks
 
      ! Allocate Appropriate Number of Blocks
-     ALLOCATE (unsolved_blocks(num_blocks), &    ! For performing calculations
-                  solved_blocks(num_blocks))      ! Actual solved blocks      
+     ALLOCATE (grid_blocks(num_blocks))      ! Actual solved blocks      
 
      WRITE(0,'("Read Data:")') 
 
 
      ! Read Data from Input and Write Results to Screen
      DO i = 1,num_blocks
-       READ (15,'(4(I3,2X),I3)') unsolved_blocks(i) % block_number, &
-                                 unsolved_blocks(i) % xMin,         &
-                                 unsolved_blocks(i) % xMax,         &
-                                 unsolved_blocks(i) % iMin,         &
-                                 unsolved_blocks(i) % iMax
+       READ (15,'(4(I3,2X),I3)') grid_blocks(i) % block_number, &
+                                 grid_blocks(i) % xMin,         &
+                                 grid_blocks(i) % xMax,         &
+                                 grid_blocks(i) % iMin,         &
+                                 grid_blocks(i) % iMax
 
-      ALLOCATE(solved_blocks(i) % u(unsolved_blocks(i)%iMax),        &
-               solved_blocks(i) % uNew(unsolved_blocks(i)%iMax),     &
-               solved_blocks(i) % uExact(unsolved_blocks(i)%iMax),   &
-               solved_blocks(i) % x(unsolved_blocks(i)%iMax))
+      ! Allocate Flow Value Arrays
+      ALLOCATE(grid_blocks(i) % u(grid_blocks(i)%iMax),        &
+               grid_blocks(i) % uNew(grid_blocks(i)%iMax),     &
+               grid_blocks(i) % uExact(grid_blocks(i)%iMax),   &
+               grid_blocks(i) % x(grid_blocks(i)%iMax))
 
-       WRITE (0,'(4(I3,2X),I3)') unsolved_blocks(i) % block_number, &
-                                 unsolved_blocks(i) % xMin,         &
-                                 unsolved_blocks(i) % xMax,         &
-                                 unsolved_blocks(i) % iMin,         &
-                                 unsolved_blocks(i) % iMax
+      ! Initialize Flow Values
+      DO j = 1,grid_blocks(i)%iMax
+        grid_blocks(i) % u(j)      = 0.0_rDef
+        grid_blocks(i) % uNew(j)   = 0.0_rDef
+        grid_blocks(i) % uExact(j) = 0.0_rDef
+        grid_blocks(i) % x(j)      = 0.0_rDef 
+      END DO
+
+      ! Set Min, Max, and Initial Conditions
+      grid_blocks(i) % uMin     = 1.0_rDef
+      grid_blocks(i) % uMax     = 3.0_rDef
+      grid_blocks(i) % uInitial = 2.0_rDef
+
+      ! Write Read Data to Screen
+       WRITE (0,'(4(I3,2X),I3)') grid_blocks(i) % block_number, &
+                                 grid_blocks(i) % xMin,         &
+                                 grid_blocks(i) % xMax,         &
+                                 grid_blocks(i) % iMin,         &
+                                 grid_blocks(i) % iMax
      END DO
 
      ! Repeat request if file not opened satisfactorily
@@ -332,15 +303,28 @@ PROGRAM MAIN
     END DO
 
     
-    CALL Sort_Data(unsolved_blocks,num_blocks)
+    CALL Sort_Data(grid_blocks,num_blocks)
     !CLOSE (15)
 
     ! Set Parameters
-    CALL GetParams(unsolved_blocks,num_blocks)
+    CALL GetParams(grid_blocks,num_blocks)
+
+    ! Exact Solution
+    ! Create Space Domain and Map Exact Solution
+    DO i = 1,num_blocks
+      DO j = 1,grid_blocks(i) % iMax
+
+        grid_blocks(i) % x(j) = grid_blocks(i) %  xMin + REAL(j-1,rDef) * grid_blocks(i) % dX
+        grid_blocks(i) % uExact(j) = grid_blocks(i) % uMin + (grid_blocks(i) % uMax   &
+                                                               -  grid_blocks(i) % uMin)  &
+                                     * (grid_blocks(i) % x(j) - grid_blocks(i) % xMin)/ &
+                                       (grid_blocks(i) % xMax - grid_blocks(i) % xMin)
+      END DO
+    END DO
 
     ! Initialize Data
-    DO i = 1, solved_blocks(1) % iMax
-      solved_blocks(1) % u(i) = solved_blocks(1) % uInitial
+    DO i = 1, grid_blocks(1) % iMax
+      grid_blocks(1) % u(i) = grid_blocks(1) % uInitial
     END DO
 
     nStep = 0
@@ -349,20 +333,20 @@ PROGRAM MAIN
     ! Calculate Solution(s)
     nStep = nStep + 1
 
-    CALL GetCD2E1Update(unsolved_blocks,solved_blocks)
+    CALL GetCD2E1Update(grid_blocks)
 
     ! Calculate l2Err
-    solved_blocks(1) % l2Err = 0.0_rDef
-    DO i = 1,solved_blocks(1) % iMax
-      solved_blocks(1) % u(i)   = solved_blocks(1) % uNew(i)
-      solved_blocks(1) % dU     = solved_blocks(1) % u(i) - solved_blocks(1) % uExact(i)
-      solved_blocks(1) % l2Err  = solved_blocks(1) % l2Err + &
-                                 (solved_blocks(1) % dU * solved_blocks(1) % dU)
+    grid_blocks(1) % l2Err = 0.0_rDef
+    DO i = 1,grid_blocks(1) % iMax
+      grid_blocks(1) % u(i)   = grid_blocks(1) % uNew(i)
+      grid_blocks(1) % dU     = grid_blocks(1) % u(i) - grid_blocks(1) % uExact(i)
+      grid_blocks(1) % l2Err  = grid_blocks(1) % l2Err + &
+                               (grid_blocks(1) % dU * grid_blocks(1) % dU)
     END DO
 
-    solved_blocks(1) % l2Err = SQRT(solved_blocks(1) % l2Err/REAL(solved_blocks(1)%iMax))
-!
-!   WRITE(0,*) nStep,solved_blocks(1) % l2Err
+    grid_blocks(1) % l2Err = SQRT(grid_blocks(1) % l2Err/REAL(grid_blocks(1)%iMax))
+
+    WRITE(0,*) nStep,grid_blocks(1) % l2Err
 !
 !   IF ((solved_blocks(1) % l2Err < l2Max) .AND.  &
 !      (solved_blocks(1) % l2Err > l2Tol) .AND.  &
@@ -371,17 +355,17 @@ PROGRAM MAIN
 !  ELSE
 !    CONTINUE  ! Done
 !  END IF
-
+!
     OPEN(55, FILE='test.dat', STATUS='NEW')
-
+!
     ! Write Results
-    DO i = solved_blocks(1) % iMin,solved_blocks(1) % iMax
-      WRITE(55,*) solved_blocks(1) % x(i),      &
-                  solved_blocks(1) % uExact(i), &
-                  solved_blocks(1) % uNew(i)
+    DO i = grid_blocks(1) % iMin,grid_blocks(1) % iMax
+      WRITE(55,*) grid_blocks(1) % x(i),      &
+                  grid_blocks(1) % uExact(i), &
+                  grid_blocks(1) % uNew(i)
     END DO
-
-     CLOSE(55)
+!
+    CLOSE(55)
 
 END PROGRAM MAIN
 
