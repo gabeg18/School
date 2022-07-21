@@ -126,6 +126,63 @@ END INTERFACE
 
 END MODULE SetParams
 
+MODULE Exact_Solution
+  USE, INTRINSIC :: ISO_FORTRAN_ENV
+  USE block_type
+  IMPLICIT NONE
+  PRIVATE
+  PUBLIC :: GetExactSoln
+
+  INTEGER, PARAMETER :: rDef = REAL64
+
+INTERFACE GetExactSoln
+  MODULE PROCEDURE GlobalExactSoln
+END INTERFACE
+
+  CONTAINS 
+    SUBROUTINE GlobalExactSoln(grid_blocks,num_blocks)
+
+      ! Dummy Variable Declaration
+      TYPE(grid_block), DIMENSION(:), INTENT(INOUT) :: grid_blocks
+      INTEGER, INTENT(IN) ::  num_blocks
+
+      ! Local Variable Declaration
+      INTEGER :: i,j,  &
+                 nStep  ! For "running total"
+
+      ! Calculate Global Exact Solution
+      DO i = 1,grid_blocks(num_blocks) % iMax
+        grid_blocks(num_blocks) % uExact(i) =  grid_blocks(num_blocks) % uMin   &
+                                            + (grid_blocks(num_blocks) % uMax   &
+                                            -  grid_blocks(num_blocks) % uMin)  &
+                                            * (grid_blocks(num_blocks) % x(i)   & 
+                                            -  grid_blocks(num_blocks) % xMin)  &
+                                            / (grid_blocks(num_blocks) % xMax   &
+                                            -  grid_blocks(num_blocks) % xMin)
+      END DO
+
+      ! Map Exact Solution to Each Block
+      nStep = 0
+      DO i = 1,num_blocks
+        DO j = 1,grid_blocks(i) % iMax
+          nStep = nStep + 1
+
+          ! Only Map to "Actual" Blocks (Block 5 is "Master" Block)
+          IF (i /= num_blocks) THEN
+
+            ! Take uExact(nStep) since j resets each loop
+            grid_blocks(i) % uExact(j) = grid_blocks(num_blocks) % uExact(nStep)
+
+          END IF
+
+        END DO
+      END DO
+
+    END SUBROUTINE GlobalExactSoln
+
+END MODULE Exact_Solution
+  
+
 
 
 MODULE CD2E
@@ -142,27 +199,32 @@ MODULE CD2E
  END INTERFACE
 
   CONTAINS 
-    SUBROUTINE CalculateCD2E1Update(grid_blocks)
+    SUBROUTINE CalculateCD2E1Update(grid_blocks,num_blocks)
 
     ! Dummy Variables
     TYPE(grid_block), DIMENSION(:), INTENT(INOUT) :: grid_blocks
+    INTEGER, INTENT(IN) :: num_blocks
 
     ! Local Variables
-    INTEGER :: i,j,   &
-               num_blocks
-
-    REAL(KIND=rDef) :: xMin,  &
-                       xMax
+    INTEGER :: i,j
     
-    num_blocks = 1
-
-    ! Beginning with a single block...
-
     ! Exact Solution
 
     DO i = 1,num_blocks
 
     ! Flow Solution (Starting with 1 block)
+
+      ! Set Min, Max, and Initial Conditions
+      grid_blocks(1) % uMin          = 1.0_rDef
+      grid_blocks(1) % uInitial      = 2.0_rDef
+      grid_blocks(num_blocks) % uMax = 3.0_rDef
+
+      IF (i = 1) THEN
+        grid_blocks(i) % uMin          = 1.0_rDef
+        grid_blocks(i) % uInitial      = 2.0_rDef
+
+      ELSE IF (i = num_blocks) THEN
+        grid_blocks(i) % uMax = 3.0_rDef
 
       ! Apply B.C.
       grid_blocks(i) % uNew(grid_blocks(i) % iMin) = grid_blocks(i) % uMin
@@ -170,7 +232,7 @@ MODULE CD2E
 
       ! Solving for Interior Domain
       DO j = 2,(grid_blocks(i) % iMax) - 1
-        grid_blocks(i) % uNew(j) = grid_blocks(i) % u(j) + grid_blocks(i) % sigma *  &
+        grid_blocks(i) % uNew(j) = grid_blocks(i) % u(j) + grid_blocks(i) % sigma *      &
                                   (grid_blocks(i) % u(j+1)                               &
                        -  2.0_rDef*grid_blocks(i) % u(j)                                 &
                        +           grid_blocks(i) % u(j-1))
@@ -188,6 +250,7 @@ PROGRAM MAIN
   USE block_type
   USE Input_Processing
   USE SetParams
+  USE Exact_Solution
   USE CD2E
   USE ISO_FORTRAN_ENV
   IMPLICIT NONE
@@ -279,10 +342,7 @@ PROGRAM MAIN
         grid_blocks(i) % x(j)      = 0.0_rDef 
       END DO
 
-      ! Set Min, Max, and Initial Conditions
-      grid_blocks(i) % uMin     = 1.0_rDef
-      grid_blocks(i) % uMax     = 3.0_rDef
-      grid_blocks(i) % uInitial = 2.0_rDef
+
 
       ! Write Read Data to Screen
        WRITE (0,'(4(I3,2X),I3)') grid_blocks(i) % block_number, &
@@ -304,63 +364,78 @@ PROGRAM MAIN
     ! Set Parameters
     CALL GetParams(grid_blocks,num_blocks)
 
-    ! Exact Solution
-    ! Create Space Domain and Map Exact Solution
+
+    ! EXACT SOLUTION
+    ! Create Space Domain 
     DO i = 1,num_blocks
       DO j = 1,grid_blocks(i) % iMax
-
         grid_blocks(i) % x(j) = grid_blocks(i) %  xMin + REAL(j-1,rDef) * grid_blocks(i) % dX
-        grid_blocks(i) % uExact(j) = grid_blocks(i) % uMin + (grid_blocks(i) % uMax   &
-                                                               -  grid_blocks(i) % uMin)  &
-                                     * (grid_blocks(i) % x(j) - grid_blocks(i) % xMin)/ &
-                                       (grid_blocks(i) % xMax - grid_blocks(i) % xMin)
       END DO
     END DO
 
+    CALL GetExactSoln(grid_blocks,num_blocks)
+
     ! Initialize Data
-    DO i = 1, grid_blocks(1) % iMax
-      grid_blocks(1) % u(i) = grid_blocks(1) % uInitial
-    END DO
-    
-
-    nStep = 0
-    99 CONTINUE
-
-    ! Calculate Solution(s)
-    nStep = nStep + 1
-
-    CALL GetCD2E1Update(grid_blocks)
-
-    ! Calculate l2Err
-    grid_blocks(1) % l2Err = 0.0_rDef
-    DO i = 1,grid_blocks(1) % iMax
-      grid_blocks(1) % u(i)   = grid_blocks(1) % uNew(i)
-      grid_blocks(1) % dU     = grid_blocks(1) % u(i) - grid_blocks(1) % uExact(i)
-      grid_blocks(1) % l2Err  = grid_blocks(1) % l2Err + &
-                               (grid_blocks(1) % dU * grid_blocks(1) % dU)
+    DO i = 1,num_blocks
+      DO j = 1, grid_blocks(i) % iMax
+        grid_blocks(i) % u(j) = grid_blocks(i) % uInitial
+      END DO
     END DO
 
-    grid_blocks(1) % l2Err = SQRT(grid_blocks(1) % l2Err/REAL(grid_blocks(1)%iMax))
 
-    WRITE(0,*) nStep,grid_blocks(1) % l2Err
+    ! Loop Through Each Block
+    DO i = 1,num_blocks
 
-    IF ((grid_blocks(1) % l2Err < l2Max) .AND.  &
-        (grid_blocks(1) % l2Err > l2Tol) .AND.  &
-        (nStep < maxItn)) THEN  ! Keep going
-    GO TO 99
-    ELSE
-      CONTINUE  ! Done
-    END IF
+      ! Initialize Step
+      nStep = 0
+      99 CONTINUE
 
-    OPEN(55, FILE='test.dat', STATUS='NEW')
+      ! Increment Step
+      nStep = nStep + 1
 
-    ! Write Results
-    DO i = grid_blocks(1) % iMin,grid_blocks(1) % iMax
-      WRITE(55,*) grid_blocks(1) % x(i),      &
-                  grid_blocks(1) % uExact(i), &
-                  grid_blocks(1) % uNew(i)
-    END DO
+      ! Calculate Solution(s)
+      CALL GetCD2E1Update(grid_blocks,num_blocks)
 
-    CLOSE(55)
+      ! Calculate L2 Error
+      grid_blocks(i) % l2Err = 0.0_rDef
+
+      ! Sum Value of L2 Within Each Block
+      DO j = 1,grid_blocks(i) % iMax
+        grid_blocks(i) % u(j)   = grid_blocks(i) % uNew(j)
+        grid_blocks(i) % dU     = grid_blocks(i) % u(j) - grid_blocks(i) % uExact(j)
+        grid_blocks(i) % l2Err  = grid_blocks(i) % l2Err +                            &
+                                (grid_blocks(i) % dU * grid_blocks(i) % dU)
+      END DO
+
+      ! Calculate (Actual) L2
+      grid_blocks(i) % l2Err = SQRT(grid_blocks(i) % l2Err/REAL(grid_blocks(i)%iMax))
+
+      ! Write to Screen
+      WRITE(0,*) nStep,grid_blocks(i) % l2Err
+
+      ! Determine Whether to Continue or Not
+      IF ((grid_blocks(i) % l2Err < l2Max) .AND.  &
+          (grid_blocks(i) % l2Err > l2Tol) .AND.  &
+          (nStep < maxItn)) THEN  ! Keep going
+      GO TO 99
+      ELSE
+        WRITE(0,'(/"Block: ",I3," converged!"/)') grid_blocks(i) % block_number
+      END IF
+
+     END DO
+
+
+     OPEN(55, FILE='test.dat', STATUS='NEW')
+
+     ! Write Results
+     DO i = 1,num_blocks
+       DO j = grid_blocks(i) % iMin,grid_blocks(i) % iMax
+         WRITE(55,*) grid_blocks(i) % x(j),          &
+                     grid_blocks(i) % uExact(j),     &
+                     grid_blocks(i) % uNew(j)
+       END DO
+     END DO
+
+     CLOSE(55)
 
 END PROGRAM MAIN
