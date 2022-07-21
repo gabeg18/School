@@ -161,13 +161,6 @@ MODULE CD2E
     ! Exact Solution
 
     DO i = 1,num_blocks
-!
-!     ! Allocate Memory
-!     ALLOCATE(solved_blocks(i) % u(solved_blocks(i)%iMax),        &
-!              solved_blocks(i) % uNew(solved_blocks(i)%iMax),     &
-!              solved_blocks(i) % uExact(solved_blocks(i)%iMax),   &
-!              solved_blocks(i) % x(solved_blocks(i)%iMax))
-
 
     ! Flow Solution (Starting with 1 block)
 
@@ -183,6 +176,8 @@ MODULE CD2E
                        +           grid_blocks(i) % u(j-1))
       END DO
     END DO
+
+    RETURN
 
     END SUBROUTINE CalculateCD2E1Update
 
@@ -326,6 +321,7 @@ PROGRAM MAIN
     DO i = 1, grid_blocks(1) % iMax
       grid_blocks(1) % u(i) = grid_blocks(1) % uInitial
     END DO
+    
 
     nStep = 0
     99 CONTINUE
@@ -347,28 +343,24 @@ PROGRAM MAIN
     grid_blocks(1) % l2Err = SQRT(grid_blocks(1) % l2Err/REAL(grid_blocks(1)%iMax))
 
     WRITE(0,*) nStep,grid_blocks(1) % l2Err
-!
-!   IF ((solved_blocks(1) % l2Err < l2Max) .AND.  &
-!      (solved_blocks(1) % l2Err > l2Tol) .AND.  &
-!      (nStep < maxItn)) THEN  ! Keep going
-!    GO TO 99
-!  ELSE
-!    CONTINUE  ! Done
-!  END IF
-!
+
+    IF ((grid_blocks(1) % l2Err < l2Max) .AND.  &
+        (grid_blocks(1) % l2Err > l2Tol) .AND.  &
+        (nStep < maxItn)) THEN  ! Keep going
+    GO TO 99
+    ELSE
+      CONTINUE  ! Done
+    END IF
+
     OPEN(55, FILE='test.dat', STATUS='NEW')
-!
+
     ! Write Results
     DO i = grid_blocks(1) % iMin,grid_blocks(1) % iMax
       WRITE(55,*) grid_blocks(1) % x(i),      &
                   grid_blocks(1) % uExact(i), &
                   grid_blocks(1) % uNew(i)
     END DO
-!
+
     CLOSE(55)
 
 END PROGRAM MAIN
-
-
-
-  
