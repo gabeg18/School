@@ -150,6 +150,11 @@ END INTERFACE
       INTEGER :: i,j,  &
                  nStep  ! For "running total"
 
+      ! Initialize Variables
+      grid_blocks(num_blocks) % uMin     = 1.0_rDef
+      grid_blocks(num_blocks) % uMax     = 3.0_rDef
+      grid_blocks(num_blocks) % uInitial = 2.0_rDef
+
       ! Calculate Global Exact Solution
       DO i = 1,grid_blocks(num_blocks) % iMax
         grid_blocks(num_blocks) % uExact(i) =  grid_blocks(num_blocks) % uMin   &
@@ -210,25 +215,21 @@ MODULE CD2E
     
     ! Exact Solution
 
+    ! Set Min, Max, and Initial Conditions
+    grid_blocks(1) % uMin          = 1.0_rDef   ! Global Minimum for FIRST block
+    grid_blocks(num_blocks) % uMax = 3.0_rDef   ! Global Maximum for LAST block
+
+    ! Initialize Data
     DO i = 1,num_blocks
 
     ! Flow Solution (Starting with 1 block)
 
-      ! Set Min, Max, and Initial Conditions
-      grid_blocks(1) % uMin          = 1.0_rDef
-      grid_blocks(1) % uInitial      = 2.0_rDef
-      grid_blocks(num_blocks) % uMax = 3.0_rDef
-
-      IF (i = 1) THEN
-        grid_blocks(i) % uMin          = 1.0_rDef
-        grid_blocks(i) % uInitial      = 2.0_rDef
-
-      ELSE IF (i = num_blocks) THEN
-        grid_blocks(i) % uMax = 3.0_rDef
-
       ! Apply B.C.
-      grid_blocks(i) % uNew(grid_blocks(i) % iMin) = grid_blocks(i) % uMin
-      grid_blocks(i) % uNew(grid_blocks(i) % iMax) = grid_blocks(i) % uMax
+      grid_blocks(i) % uNew(grid_blocks(i) % iMin) = grid_blocks(i) % &
+                                                     uExact(grid_blocks(i) % iMin)
+
+      grid_blocks(i) % uNew(grid_blocks(i) % iMax) = grid_blocks(i) % &
+                                                     uExact(grid_blocks(i) % iMax)
 
       ! Solving for Interior Domain
       DO j = 2,(grid_blocks(i) % iMax) - 1
@@ -301,6 +302,8 @@ PROGRAM MAIN
     !! MAIN Code Starts Here
     !--------------------------------------------------------------------
       
+    !! READ DATA
+    !--------------------------------------------------------------------
     DO
      !PRINT *,"Please give name of data file"
      !READ *,InputFileName
@@ -342,6 +345,8 @@ PROGRAM MAIN
         grid_blocks(i) % x(j)      = 0.0_rDef 
       END DO
 
+      ! Apply IC
+      grid_blocks(i) % uInitial     = 2.0_rDef   
 
 
       ! Write Read Data to Screen
@@ -357,6 +362,7 @@ PROGRAM MAIN
        PRINT *,"Unable to open file -- please try again"
     END DO
 
+
     
     CALL Sort_Data(grid_blocks,num_blocks)
     !CLOSE (15)
@@ -366,6 +372,8 @@ PROGRAM MAIN
 
 
     ! EXACT SOLUTION
+    !--------------------------------------------------------------------
+
     ! Create Space Domain 
     DO i = 1,num_blocks
       DO j = 1,grid_blocks(i) % iMax
@@ -422,20 +430,20 @@ PROGRAM MAIN
         WRITE(0,'(/"Block: ",I3," converged!"/)') grid_blocks(i) % block_number
       END IF
 
-     END DO
+      END DO
 
 
-     OPEN(55, FILE='test.dat', STATUS='NEW')
+      OPEN(55, FILE='test.dat', STATUS='NEW')
 
-     ! Write Results
-     DO i = 1,num_blocks
-       DO j = grid_blocks(i) % iMin,grid_blocks(i) % iMax
-         WRITE(55,*) grid_blocks(i) % x(j),          &
-                     grid_blocks(i) % uExact(j),     &
-                     grid_blocks(i) % uNew(j)
-       END DO
-     END DO
+      ! Write Results
+      DO i = 1,num_blocks
+        DO j = grid_blocks(i) % iMin,grid_blocks(i) % iMax
+          WRITE(55,*) grid_blocks(i) % x(j),          &
+                      grid_blocks(i) % uExact(j),     &
+                      grid_blocks(i) % uNew(j)
+        END DO
+      END DO
 
-     CLOSE(55)
+      CLOSE(55)
 
 END PROGRAM MAIN
