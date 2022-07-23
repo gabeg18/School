@@ -27,9 +27,16 @@ MODULE block_type
                        dU
 
     REAL(KIND=rDef), DIMENSION(:), ALLOCATABLE :: u,      &
+                                                  x,      &
                                                   uNew,   &
                                                   uExact, &
-                                                  x
+                                                  fVec0,  & ! For the RK Scheme
+                                                  fVecS,  & ! For the RK Scheme
+                                                  rhs,    & ! For the I1 Scheme
+                                                  dm1,    & ! For the I1 Scheme 
+                                                  d0,     & ! For the I1 Scheme
+                                                  dp1       ! For the I1 Scheme
+                                                  
 
   END TYPE grid_block
 
